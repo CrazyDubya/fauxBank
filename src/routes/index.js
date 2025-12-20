@@ -1,5 +1,9 @@
 /**
  * API Routes for fauxBank
+ * 
+ * Security Note: Global rate limiting (100 req/min) is applied to all routes
+ * in server.js via the rateLimit middleware. Additional per-route rate limiting
+ * can be added here for specific endpoints if needed.
  */
 
 const express = require('express');

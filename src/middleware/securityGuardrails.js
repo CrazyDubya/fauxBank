@@ -75,17 +75,24 @@ function rateLimit(options = {}) {
 
 /**
  * Input sanitization middleware
- * Provides basic protection against XSS attacks by removing script tags
+ * Provides basic protection against XSS attacks
  * Note: Since this system uses in-memory storage (not SQL database),
- * SQL injection is not a real threat. The SQL keyword filtering is
- * included as a demonstration of banking security best practices.
+ * SQL injection is not a real threat. The filtering is included as a 
+ * demonstration of banking security best practices.
  */
 function sanitizeInput(req, res, next) {
   const sanitize = (obj) => {
     if (typeof obj === 'string') {
       // Remove potential script tags for XSS prevention
-      return obj
-        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+      // This removes all script tags including those with spaces
+      let sanitized = obj;
+      // Remove script tags iteratively until none remain
+      while (/<script[\s\S]*?<\/script\s*>/gi.test(sanitized)) {
+        sanitized = sanitized.replace(/<script[\s\S]*?<\/script\s*>/gi, '');
+      }
+      // Also remove script tags without closing tags
+      sanitized = sanitized.replace(/<script\b[^>]*>/gi, '');
+      return sanitized;
     }
     
     if (Array.isArray(obj)) {
