@@ -36,7 +36,6 @@ class TransactionService {
       if (fraudCheck.isSuspicious) {
         transaction.status = 'failed';
         transaction.failureReason = 'Flagged for fraud review';
-        dataStore.updateTransaction(transactionId, transaction);
         
         auditLog('ACH_FRAUD_DETECTED', { transactionId, reasons: fraudCheck.reasons });
         throw new Error('Transaction flagged for fraud review');

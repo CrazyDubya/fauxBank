@@ -98,7 +98,10 @@ class InvestmentService {
 
     // Calculate current value
     const now = new Date();
-    const monthsElapsed = (now - cd.createdAt) / (1000 * 60 * 60 * 24 * 30);
+    // Calculate months elapsed using actual month difference
+    const yearsDiff = now.getFullYear() - cd.createdAt.getFullYear();
+    const monthsDiff = now.getMonth() - cd.createdAt.getMonth();
+    const monthsElapsed = yearsDiff * 12 + monthsDiff;
     let currentValue = cd.principal;
 
     if (now >= cd.maturityDate) {
