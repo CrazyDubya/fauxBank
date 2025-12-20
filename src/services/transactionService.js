@@ -45,10 +45,9 @@ class TransactionService {
       // Process transfer
       accountService.transferFunds(fromAccountNumber, toAccountNumber, amount);
 
-      // Mark as completed
+      // Mark as completed (object already in store, just update properties)
       transaction.status = 'completed';
       transaction.completedAt = new Date();
-      dataStore.createTransaction(transaction);
 
       auditLog('ACH_COMPLETED', { transactionId, fromAccountNumber, toAccountNumber, amount });
 
@@ -58,7 +57,6 @@ class TransactionService {
       if (transaction) {
         transaction.status = 'failed';
         transaction.failureReason = error.message;
-        dataStore.createTransaction(transaction);
       }
 
       auditLog('ACH_FAILED', { transactionId, error: error.message });
@@ -93,7 +91,6 @@ class TransactionService {
       if (existingChecks.length > 0) {
         transaction.status = 'failed';
         transaction.failureReason = 'Check number already used';
-        dataStore.createTransaction(transaction);
         throw new Error('Check number already used');
       }
 
@@ -102,7 +99,6 @@ class TransactionService {
 
       transaction.status = 'completed';
       transaction.completedAt = new Date();
-      dataStore.createTransaction(transaction);
 
       auditLog('ECHECK_COMPLETED', { transactionId, checkNumber, amount });
 
@@ -112,7 +108,6 @@ class TransactionService {
       if (transaction) {
         transaction.status = 'failed';
         transaction.failureReason = error.message;
-        dataStore.createTransaction(transaction);
       }
 
       auditLog('ECHECK_FAILED', { transactionId, error: error.message });
@@ -151,7 +146,6 @@ class TransactionService {
 
       transaction.status = 'completed';
       transaction.completedAt = new Date();
-      dataStore.createTransaction(transaction);
 
       auditLog('WIRE_COMPLETED', { transactionId, amount, wireFee });
 
@@ -161,7 +155,6 @@ class TransactionService {
       if (transaction) {
         transaction.status = 'failed';
         transaction.failureReason = error.message;
-        dataStore.createTransaction(transaction);
       }
 
       auditLog('WIRE_FAILED', { transactionId, error: error.message });
@@ -205,7 +198,6 @@ class TransactionService {
 
       transaction.status = 'completed';
       transaction.completedAt = new Date();
-      dataStore.createTransaction(transaction);
 
       auditLog('DEBIT_CARD_TRANSACTION', { transactionId, amount, merchantId });
 
@@ -215,7 +207,6 @@ class TransactionService {
       if (transaction) {
         transaction.status = 'failed';
         transaction.failureReason = error.message;
-        dataStore.createTransaction(transaction);
       }
 
       auditLog('DEBIT_CARD_FAILED', { transactionId, error: error.message });
