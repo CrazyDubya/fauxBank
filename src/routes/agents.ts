@@ -5,7 +5,7 @@ import {
   AgentScopeRequest,
 } from '../types';
 import { createAgentService } from '../services/agents';
-import { authMiddleware, requireCapability } from '../middleware/auth';
+import { authMiddleware } from '../middleware/auth';
 import { Errors, errorResponse, handleError } from '../utils/errors';
 
 type Env = {
@@ -121,15 +121,21 @@ agents.get(
 
 /**
  * POST /agents/:agentId/scope - Configure agent scope
- * Requires ADMIN capability
+ * SECURITY FIX: Requires ADMIN type (not just ACCOUNT_WRITE capability)
  */
 agents.post(
   '/:agentId/scope',
   authMiddleware(),
-  requireCapability('ACCOUNT_WRITE'),
   zValidator('json', AgentScopeRequest),
   async (c) => {
     try {
+      const currentAgent = c.get('agent');
+
+      // SECURITY FIX: Only ADMIN type agents can configure scope
+      if (currentAgent.type !== 'ADMIN') {
+        return errorResponse(c, Errors.insufficientPermissions('Only ADMIN agents can configure agent scope'));
+      }
+
       const agentId = c.req.param('agentId');
       const request = c.req.valid('json');
 
@@ -145,15 +151,28 @@ agents.post(
 
 /**
  * POST /agents/:agentId/suspend - Suspend agent
- * Requires ADMIN capability
+ * SECURITY FIX: Requires ADMIN type (not just ACCOUNT_WRITE capability)
  */
 agents.post(
   '/:agentId/suspend',
   authMiddleware(),
-  requireCapability('ACCOUNT_WRITE'),
   async (c) => {
     try {
+      const currentAgent = c.get('agent');
+
+      // SECURITY FIX: Only ADMIN type agents can suspend other agents
+      if (currentAgent.type !== 'ADMIN') {
+        return errorResponse(c, Errors.insufficientPermissions('Only ADMIN agents can suspend agents'));
+      }
+
       const agentId = c.req.param('agentId');
+
+      // Prevent self-suspension
+      if (currentAgent.id === agentId) {
+        return errorResponse(c, Errors.validationError({
+          agent_id: ['Cannot suspend yourself'],
+        }));
+      }
 
       const agentService = createAgentService(c.env.DB);
       await agentService.suspendAgent(agentId);
@@ -167,15 +186,28 @@ agents.post(
 
 /**
  * POST /agents/:agentId/revoke - Revoke agent
- * Requires ADMIN capability
+ * SECURITY FIX: Requires ADMIN type (not just ACCOUNT_WRITE capability)
  */
 agents.post(
   '/:agentId/revoke',
   authMiddleware(),
-  requireCapability('ACCOUNT_WRITE'),
   async (c) => {
     try {
+      const currentAgent = c.get('agent');
+
+      // SECURITY FIX: Only ADMIN type agents can revoke other agents
+      if (currentAgent.type !== 'ADMIN') {
+        return errorResponse(c, Errors.insufficientPermissions('Only ADMIN agents can revoke agents'));
+      }
+
       const agentId = c.req.param('agentId');
+
+      // Prevent self-revocation
+      if (currentAgent.id === agentId) {
+        return errorResponse(c, Errors.validationError({
+          agent_id: ['Cannot revoke yourself'],
+        }));
+      }
 
       const agentService = createAgentService(c.env.DB);
       await agentService.revokeAgent(agentId);
