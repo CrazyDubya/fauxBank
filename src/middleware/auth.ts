@@ -46,7 +46,7 @@ export function authMiddleware() {
     c.set('agent', agent);
     c.set('agentId', agent.id);
 
-    await next();
+    return next();
   };
 }
 
@@ -65,12 +65,13 @@ export function requireCapability(capability: AgentCapability) {
       return errorResponse(c, Errors.insufficientPermissions(capability));
     }
 
-    await next();
+    return next();
   };
 }
 
 /**
- * Check account access for an agent
+ * Check account access for an agent (middleware version)
+ * Use when accountId is in path params
  */
 export function checkAccountAccess(accountId: string) {
   return async (c: Context, next: Next) => {
@@ -81,8 +82,62 @@ export function checkAccountAccess(accountId: string) {
       return errorResponse(c, Errors.insufficientPermissions('Account access denied'));
     }
 
-    await next();
+    return next();
   };
+}
+
+/**
+ * SECURITY FIX: Middleware to check account access from path param
+ * Extracts accountId from path and validates agent has access
+ */
+export function requireAccountAccess(paramName: string = 'accountId') {
+  return async (c: Context, next: Next) => {
+    const agent = c.get('agent');
+    const accountId = c.req.param(paramName);
+
+    if (!agent) {
+      return errorResponse(c, Errors.invalidCredentials());
+    }
+
+    if (!accountId) {
+      await next();
+      return;
+    }
+
+    const agentService = createAgentService(c.env.DB);
+
+    if (!agentService.checkAccountAccess(agent, accountId)) {
+      return errorResponse(c, Errors.insufficientPermissions(`Access denied to account ${accountId}`));
+    }
+
+    return next();
+  };
+}
+
+/**
+ * SECURITY FIX: Check access to multiple accounts (for transactions)
+ */
+export async function validateTransactionAccess(
+  c: Context,
+  debitAccountId: string,
+  creditAccountId: string
+): Promise<boolean> {
+  const agent = c.get('agent');
+  if (!agent) return false;
+
+  const agentService = createAgentService(c.env.DB);
+
+  // Agent must have access to at least one of the accounts
+  const hasDebitAccess = agentService.checkAccountAccess(agent, debitAccountId);
+  const hasCreditAccess = agentService.checkAccountAccess(agent, creditAccountId);
+
+  // For ADMIN agents, allow any transaction
+  if (agent.type === 'ADMIN') {
+    return true;
+  }
+
+  // For other agents, must have access to at least one account
+  return hasDebitAccess || hasCreditAccess;
 }
 
 /**

@@ -412,26 +412,31 @@ export const RefundRequest = z.object({
 export type RefundRequest = z.infer<typeof RefundRequest>;
 
 // Agent Registration Request
+// SECURITY FIX: Added length limits to prevent DoS attacks
 export const AgentRegistrationRequest = z.object({
-  agent_id: z.string().regex(/^[a-z0-9-]+$/),
+  agent_id: z.string()
+    .min(3, 'Agent ID must be at least 3 characters')
+    .max(64, 'Agent ID must be at most 64 characters')
+    .regex(/^[a-z0-9-]+$/, 'Agent ID must contain only lowercase letters, numbers, and hyphens'),
   agent_type: AgentType,
-  capabilities_requested: z.array(AgentCapability),
-  webhook_url: z.string().url().optional(),
+  capabilities_requested: z.array(AgentCapability).max(20, 'Too many capabilities requested'),
+  webhook_url: z.string().url().max(512, 'Webhook URL too long').optional(),
   rate_limits: z.object({
-    requests_per_minute: z.number().int().positive().optional(),
-    transactions_per_minute: z.number().int().positive().optional(),
-    amount_per_day: z.number().int().positive().optional(),
+    requests_per_minute: z.number().int().positive().max(10000).optional(),
+    transactions_per_minute: z.number().int().positive().max(1000).optional(),
+    amount_per_day: z.number().int().positive().max(1000000000000).optional(), // Max F$10B
   }).optional(),
 });
 export type AgentRegistrationRequest = z.infer<typeof AgentRegistrationRequest>;
 
 // Agent Scope Configuration
+// SECURITY FIX: Added length limits
 export const AgentScopeRequest = z.object({
-  account_patterns: z.array(z.string()).optional(),
-  transaction_types: z.array(TransactionType).optional(),
+  account_patterns: z.array(z.string().max(100)).max(50).optional(),
+  transaction_types: z.array(TransactionType).max(20).optional(),
   amount_limits: z.object({
-    single_transaction: z.number().int().positive().optional(),
-    daily_aggregate: z.number().int().positive().optional(),
+    single_transaction: z.number().int().positive().max(1000000000).optional(), // Max F$10M
+    daily_aggregate: z.number().int().positive().max(1000000000000).optional(), // Max F$10B
   }).optional(),
 });
 export type AgentScopeRequest = z.infer<typeof AgentScopeRequest>;
@@ -453,21 +458,23 @@ export const WireTransferRequest = z.object({
 export type WireTransferRequest = z.infer<typeof WireTransferRequest>;
 
 // Dispute Request
+// SECURITY FIX: Added length limit on description
 export const OpenDisputeRequest = z.object({
   transaction_id: z.string().uuid(),
   reason: DisputeReason,
-  description: z.string().optional(),
+  description: z.string().max(2000, 'Description too long').optional(),
 });
 export type OpenDisputeRequest = z.infer<typeof OpenDisputeRequest>;
 
 // KYC Verification Request
+// SECURITY FIX: Added length limits
 export const KycVerificationRequest = z.object({
-  customer_id: z.string(),
+  customer_id: z.string().min(1).max(64),
   verification_type: KycVerificationType,
   documents: z.array(z.object({
-    type: z.string(),
-    reference: z.string(),
-  })).optional(),
+    type: z.string().max(64),
+    reference: z.string().max(256),
+  })).max(20).optional(),
 });
 export type KycVerificationRequest = z.infer<typeof KycVerificationRequest>;
 

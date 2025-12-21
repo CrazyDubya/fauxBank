@@ -4,12 +4,11 @@ import {
   CreateAccountRequest,
   UpdateAccountRequest,
   FreezeAccountRequest,
-  AccountId,
   formatAmount,
 } from '../types';
 import { createAccountService } from '../services/accounts';
 import { createLedgerService } from '../services/ledger';
-import { requireCapability } from '../middleware/auth';
+import { requireCapability, requireAccountAccess } from '../middleware/auth';
 import { Errors, errorResponse, handleError } from '../utils/errors';
 import { isValidAccountId } from '../utils/account-id';
 
@@ -55,10 +54,12 @@ accounts.post(
 
 /**
  * GET /accounts/:accountId - Get account details
+ * SECURITY FIX: Added account access control check
  */
 accounts.get(
   '/:accountId',
   requireCapability('ACCOUNT_READ'),
+  requireAccountAccess('accountId'),
   async (c) => {
     try {
       const accountId = c.req.param('accountId');
@@ -94,10 +95,12 @@ accounts.get(
 
 /**
  * PATCH /accounts/:accountId - Update account
+ * SECURITY FIX: Added account access control check
  */
 accounts.patch(
   '/:accountId',
   requireCapability('ACCOUNT_WRITE'),
+  requireAccountAccess('accountId'),
   zValidator('json', UpdateAccountRequest),
   async (c) => {
     try {
@@ -131,10 +134,12 @@ accounts.patch(
 
 /**
  * GET /accounts/:accountId/balance - Get current balances
+ * SECURITY FIX: Added account access control check
  */
 accounts.get(
   '/:accountId/balance',
   requireCapability('BALANCE_READ'),
+  requireAccountAccess('accountId'),
   async (c) => {
     try {
       const accountId = c.req.param('accountId');
@@ -162,10 +167,12 @@ accounts.get(
 
 /**
  * POST /accounts/:accountId/freeze - Freeze account
+ * SECURITY FIX: Added account access control check
  */
 accounts.post(
   '/:accountId/freeze',
   requireCapability('ACCOUNT_WRITE'),
+  requireAccountAccess('accountId'),
   zValidator('json', FreezeAccountRequest),
   async (c) => {
     try {
@@ -188,10 +195,12 @@ accounts.post(
 
 /**
  * POST /accounts/:accountId/close - Close account
+ * SECURITY FIX: Added account access control check
  */
 accounts.post(
   '/:accountId/close',
   requireCapability('ACCOUNT_WRITE'),
+  requireAccountAccess('accountId'),
   async (c) => {
     try {
       const accountId = c.req.param('accountId');
