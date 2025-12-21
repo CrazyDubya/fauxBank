@@ -10,10 +10,10 @@ import { merchant } from './routes/merchant';
 import { agents } from './routes/agents';
 import { compliance } from './routes/compliance';
 import { testing } from './routes/testing';
-import { authMiddleware, optionalAuthMiddleware } from './middleware/auth';
+import { authMiddleware } from './middleware/auth';
 import { rateLimitMiddleware } from './middleware/rate-limit';
 import { AccountLedger } from './durable-objects/account-ledger';
-import { handleError, errorResponse, Errors, generateTraceId } from './utils/errors';
+import { handleError, errorResponse, generateTraceId } from './utils/errors';
 
 // Re-export Durable Object
 export { AccountLedger };
@@ -24,15 +24,35 @@ type Env = {
   SESSIONS: KVNamespace;
   ACCOUNT_LEDGER: DurableObjectNamespace;
   ENVIRONMENT: string;
+  TESTING_SECRET?: string; // Required for testing endpoints in production
 };
 
 // Create main application
 const app = new Hono<{ Bindings: Env }>();
 
 // Global middleware
-app.use('*', cors());
+app.use('*', cors({
+  origin: (origin, c) => {
+    // In production, restrict to known origins
+    const allowedOrigins = ['https://fauxbank.test', 'https://api.fauxbank.test'];
+    const env = c.env?.ENVIRONMENT || 'development';
+    if (env === 'production') {
+      return allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+    }
+    // In development, allow all origins
+    return origin || '*';
+  },
+  credentials: true,
+}));
 app.use('*', logger());
-app.use('*', secureHeaders());
+app.use('*', secureHeaders({
+  contentSecurityPolicy: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+  },
+  xFrameOptions: 'DENY',
+  referrerPolicy: 'strict-origin-when-cross-origin',
+}));
 app.use('*', prettyJSON());
 
 // Add trace ID to all requests
@@ -80,8 +100,50 @@ protectedRoutes.route('/transactions', transactions);
 protectedRoutes.route('/commercial/merchant', merchant);
 protectedRoutes.route('/compliance', compliance);
 
-// Testing routes (no auth in development, should be protected in production)
-v1.route('/testing', testing);
+// Testing routes - SECURITY: Protected in production
+const testingRouter = new Hono<{ Bindings: Env }>();
+testingRouter.use('*', async (c, next) => {
+  const environment = c.env.ENVIRONMENT || 'development';
+
+  // In production, require authentication
+  if (environment === 'production') {
+    const testingSecret = c.req.header('X-Testing-Secret');
+    const authHeader = c.req.header('Authorization');
+
+    // Check for testing secret first
+    if (testingSecret) {
+      const expectedSecret = c.env.TESTING_SECRET;
+      if (!expectedSecret || testingSecret !== expectedSecret) {
+        return c.json({
+          code: 'FB-1001',
+          message: 'Invalid testing secret',
+        }, 401);
+      }
+    } else if (authHeader?.startsWith('Bearer ')) {
+      // Verify ADMIN authorization
+      const token = authHeader.substring(7);
+      const { createAgentService } = await import('./services/agents');
+      const agentService = createAgentService(c.env.DB);
+      const agent = await agentService.getAgentByToken(token);
+
+      if (!agent || agent.type !== 'ADMIN') {
+        return c.json({
+          code: 'FB-1003',
+          message: 'Only ADMIN agents can access testing endpoints in production',
+        }, 403);
+      }
+    } else {
+      return c.json({
+        code: 'FB-1003',
+        message: 'Testing endpoints require authentication in production',
+      }, 403);
+    }
+  }
+
+  return next();
+});
+testingRouter.route('/', testing);
+v1.route('/testing', testingRouter);
 
 // Mount protected routes to v1
 v1.route('/', protectedRoutes);

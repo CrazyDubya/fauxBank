@@ -12,8 +12,18 @@ export function generateUUID(): string {
 }
 
 /**
+ * SECURITY: Generate cryptographically secure random bytes
+ */
+function secureRandomInt(max: number): number {
+  const bytes = new Uint32Array(1);
+  crypto.getRandomValues(bytes);
+  return bytes[0] % max;
+}
+
+/**
  * Generate an alpha-only ID with a prefix
  * Format: PREFIX-XXXX-XXXX-XXXX (where X is A-Z)
+ * SECURITY FIX: Uses crypto.getRandomValues instead of Math.random
  */
 export function generateAlphaId(prefix: string): string {
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -23,7 +33,7 @@ export function generateAlphaId(prefix: string): string {
     if (i > 0 && i % 4 === 0) {
       result += '-';
     }
-    result += letters[Math.floor(Math.random() * 26)];
+    result += letters[secureRandomInt(26)];
   }
 
   return result;
@@ -114,19 +124,62 @@ export function generateAgentToken(): string {
 }
 
 /**
- * Hash an agent token for storage
+ * SECURITY: Fixed salt for token hashing (in production, use per-token salt stored with hash)
+ * This provides baseline rainbow table protection
  */
-export async function hashToken(token: string): Promise<string> {
+const TOKEN_SALT = 'FauxBank-v1-TokenSalt-2024';
+
+/**
+ * Generate a random salt for token hashing
+ */
+export function generateTokenSalt(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Hash an agent token for storage
+ * SECURITY FIX: Uses salted hash to prevent rainbow table attacks
+ * Format: salt$hash (salt is 32 hex chars, hash is 64 hex chars)
+ */
+export async function hashToken(token: string, salt?: string): Promise<string> {
+  const actualSalt = salt || TOKEN_SALT;
   const encoder = new TextEncoder();
-  const data = encoder.encode(token);
+  // Combine salt + token for hashing
+  const data = encoder.encode(actualSalt + token);
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+  // If using random salt, include it in output
+  if (salt) {
+    return `${salt}$${hash}`;
+  }
+  return hash;
+}
+
+/**
+ * Verify a token against a stored hash
+ * Supports both legacy (unsalted) and new (salted) format
+ */
+export async function verifyToken(token: string, storedHash: string): Promise<boolean> {
+  if (storedHash.includes('$')) {
+    // New format: salt$hash
+    const [salt, _] = storedHash.split('$');
+    const computed = await hashToken(token, salt);
+    return computed === storedHash;
+  } else {
+    // Legacy format: just hash (with fixed salt)
+    const computed = await hashToken(token);
+    return computed === storedHash;
+  }
 }
 
 /**
  * Generate a card token (for simulated cards)
  * Format: CARD-XXXX-XXXX-XXXX-XXXX
+ * SECURITY FIX: Uses crypto.getRandomValues instead of Math.random
  */
 export function generateCardToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -136,7 +189,7 @@ export function generateCardToken(): string {
     if (i > 0 && i % 4 === 0) {
       result += '-';
     }
-    result += chars[Math.floor(Math.random() * chars.length)];
+    result += chars[secureRandomInt(chars.length)];
   }
 
   return result;

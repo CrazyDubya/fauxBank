@@ -7,7 +7,7 @@ import {
   formatAmount,
 } from '../types';
 import { createLedgerService } from '../services/ledger';
-import { requireCapability } from '../middleware/auth';
+import { requireCapability, requireAccountAccess, validateTransactionAccess } from '../middleware/auth';
 import { checkTransactionRateLimit, checkDailyAmountLimit } from '../middleware/rate-limit';
 import { Errors, errorResponse, handleError } from '../utils/errors';
 
@@ -20,6 +20,7 @@ const transactions = new Hono<{ Bindings: Env }>();
 
 /**
  * POST /transactions - Post a transaction
+ * SECURITY FIX: Added account access validation for transaction accounts
  */
 transactions.post(
   '/',
@@ -29,6 +30,18 @@ transactions.post(
     try {
       const request = c.req.valid('json');
       const agentId = c.get('agentId');
+
+      // SECURITY FIX: Validate agent has access to the transaction accounts
+      const hasAccess = await validateTransactionAccess(
+        c,
+        request.debit_account,
+        request.credit_account
+      );
+      if (!hasAccess) {
+        return errorResponse(c, Errors.insufficientPermissions(
+          'Agent does not have access to the specified accounts'
+        ));
+      }
 
       // Check transaction rate limit
       const withinRateLimit = await checkTransactionRateLimit(c, request.amount.value);
@@ -64,6 +77,7 @@ transactions.post(
 
 /**
  * GET /transactions/:transactionId - Get transaction details
+ * SECURITY FIX: Added access control check for transaction accounts
  */
 transactions.get(
   '/:transactionId',
@@ -79,6 +93,18 @@ transactions.get(
         return errorResponse(c, Errors.validationError({
           transaction_id: ['Transaction not found'],
         }));
+      }
+
+      // SECURITY FIX: Verify agent has access to the transaction's accounts
+      const hasAccess = await validateTransactionAccess(
+        c,
+        transaction.debit_account,
+        transaction.credit_account
+      );
+      if (!hasAccess) {
+        return errorResponse(c, Errors.insufficientPermissions(
+          'Agent does not have access to this transaction'
+        ));
       }
 
       // Format amount for response
@@ -105,10 +131,12 @@ const TransactionHistoryQuery = z.object({
 
 /**
  * GET /accounts/:accountId/transactions - Get transaction history
+ * SECURITY FIX: Added account access control check
  */
 transactions.get(
   '/accounts/:accountId/transactions',
   requireCapability('TRANSACTION_READ'),
+  requireAccountAccess('accountId'),
   zValidator('query', TransactionHistoryQuery),
   async (c) => {
     try {
