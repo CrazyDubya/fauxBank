@@ -2,6 +2,10 @@
 
 A mock banking web & API layer providing full functionality of a bank with an agentic system backing it that has zero trust, first-in-class guardrails equivalent to current banking standards and requirements.
 
+## Overview
+
+FauxBank provides a full-service simulated banking platform that serves as the economic backbone for testing agentic e-commerce systems. It offers manipulation-resistant, audit-complete banking services using obviously-fake alpha-character account identifiers.
+
 ## Key Features
 
 - **Full Banking Functionality**: Accounts, loans, credit cards, ACH, eChecks, debit cards, credit checks, investment accounts, CDs, and more
@@ -9,6 +13,10 @@ A mock banking web & API layer providing full functionality of a bank with an ag
 - **Zero-Trust Security**: Banking-standard security guardrails and validation
 - **Agentic System**: Intelligent system for testing, roleplaying, and other uses
 - **RESTful API**: Complete API for all banking operations
+- **Manipulation Resistance**: Security through structural impossibility
+- **Double-Entry Ledger**: Every transaction debits one account and credits another
+- **Agent-Based Access Control**: Registered agents with specific capabilities and rate limits
+- **Compliance Simulation**: KYC, disputes, and regulatory workflows
 
 ## Account Number Format
 
@@ -28,6 +36,11 @@ Characters used: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (excludes ambiguous 0, O, I,
 - **Checking Accounts**: Standard transaction accounts
 - **Savings Accounts**: Interest-bearing savings with minimum balance
 - **Money Market Accounts**: Higher interest rates
+- **Certificates of Deposit**: Fixed-term deposits
+- **Loans**: Personal, auto, home, student, business
+- **Credit Cards**: Visa, Mastercard, Amex, Discover
+- **Merchant Accounts**: For commercial operations
+- **Trust & Escrow Accounts**: Specialized account types
 
 ### Credit Services
 - **Personal Loans**: Unsecured personal lending
@@ -35,7 +48,7 @@ Characters used: `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` (excludes ambiguous 0, O, I,
 - **Home Loans**: Mortgage products
 - **Student Loans**: Education financing
 - **Business Loans**: Commercial lending
-- **Credit Cards**: Visa, Mastercard, Amex, Discover
+- **Credit Cards**: Multiple card types with reward programs
 
 ### Transaction Types
 - **ACH Transfers**: 1-3 business day transfers
@@ -80,6 +93,19 @@ npm start
 npm run dev
 ```
 
+## Deployment Options
+
+### Traditional Node.js Server
+```bash
+npm start
+```
+
+### Cloudflare Workers (for edge deployment)
+```bash
+npm run dev:cloudflare  # Local development
+npm run deploy          # Deploy to production
+```
+
 ## API Documentation
 
 ### Base URL
@@ -95,194 +121,45 @@ Most endpoints require authentication using JWT tokens. Include the token in the
 Authorization: Bearer <your-jwt-token>
 ```
 
-### Endpoints
+For detailed API documentation, see:
+- [API Reference](API_REFERENCE.md) - Complete endpoint documentation
+- [Quick Start Guide](QUICK_START.md) - Usage examples
+- [Postman Collection](fauxBank.postman_collection.json) - Import-ready API collection
 
-#### Customer Management
+## Project Structure
 
-**Register Customer**
-```http
-POST /api/customers/register
-Content-Type: application/json
-
-{
-  "firstName": "John",
-  "lastName": "Doe",
-  "email": "john@example.com",
-  "password": "securePassword123",
-  "phone": "555-0100",
-  "dateOfBirth": "1990-01-01",
-  "ssn": "123-45-6789",
-  "address": {
-    "street": "123 Main St",
-    "city": "Anytown",
-    "state": "CA",
-    "zip": "12345"
-  }
-}
+```
+fauxBank/
+├── src/
+│   ├── controllers/     # API request handlers
+│   ├── models/          # Data models
+│   ├── routes/          # API routes
+│   ├── services/        # Business logic
+│   ├── middleware/      # Security and validation
+│   ├── utils/           # Utilities (account number generation)
+│   └── server.js        # Main server file
+├── frontend/            # Web UI (React + Vite)
+├── docs/                # Documentation and screenshots
+├── migrations/          # Database migrations
+└── test-api.sh          # API testing script
 ```
 
-**Login**
-```http
-POST /api/customers/login
-Content-Type: application/json
+## GUI Dashboard
 
-{
-  "email": "john@example.com",
-  "password": "securePassword123"
-}
+FauxBank includes a comprehensive web dashboard for managing accounts, transactions, and compliance. See [GUI Documentation](docs/GUI_SHOWCASE.md) for screenshots and details.
+
+## Development
+
+```bash
+# Run tests
+npm test
+
+# Type checking (if using TypeScript features)
+npm run typecheck
+
+# Database migrations (for Cloudflare D1)
+npm run db:migrate
 ```
-
-**Get Customer Profile**
-```http
-GET /api/customers/{customerId}/profile
-Authorization: Bearer <token>
-```
-
-#### Account Management
-
-**Create Account**
-```http
-POST /api/accounts
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "customerId": "customer-uuid",
-  "accountType": "checking",
-  "initialDeposit": 1000,
-  "options": {
-    "overdraftProtection": true,
-    "overdraftLimit": 500
-  }
-}
-```
-
-**Get Account**
-```http
-GET /api/accounts/{accountNumber}
-Authorization: Bearer <token>
-```
-
-**Transfer Funds**
-```http
-POST /api/accounts/transfer
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "fromAccountNumber": "AB3D-EF7G-HJ9K",
-  "toAccountNumber": "LM2N-PQ4R-ST6V",
-  "amount": 100.00
-}
-```
-
-#### Transactions
-
-**Process ACH Transfer**
-```http
-POST /api/transactions/ach
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "fromAccountNumber": "AB3D-EF7G-HJ9K",
-  "toAccountNumber": "LM2N-PQ4R-ST6V",
-  "amount": 500.00,
-  "description": "Payment for services"
-}
-```
-
-**Process eCheck**
-```http
-POST /api/transactions/echeck
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "fromAccountNumber": "AB3D-EF7G-HJ9K",
-  "toAccountNumber": "LM2N-PQ4R-ST6V",
-  "amount": 250.00,
-  "checkNumber": "1001",
-  "description": "Check payment"
-}
-```
-
-**Process Wire Transfer**
-```http
-POST /api/transactions/wire
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "fromAccountNumber": "AB3D-EF7G-HJ9K",
-  "toAccountNumber": "LM2N-PQ4R-ST6V",
-  "amount": 5000.00,
-  "description": "Wire transfer"
-}
-```
-
-#### Credit Services
-
-**Perform Credit Check**
-```http
-GET /api/customers/{customerId}/credit-check
-Authorization: Bearer <token>
-```
-
-**Apply for Loan**
-```http
-POST /api/loans/apply
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "customerId": "customer-uuid",
-  "loanType": "personal",
-  "principal": 10000,
-  "termMonths": 36,
-  "interestRate": 5.99
-}
-```
-
-**Apply for Credit Card**
-```http
-POST /api/credit-cards/apply
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "customerId": "customer-uuid",
-  "cardType": "visa",
-  "requestedLimit": 5000
-}
-```
-
-**Charge Credit Card**
-```http
-POST /api/credit-cards/charge
-Authorization: Bearer <token>
-Content-Type: application/json
-
-{
-  "cardNumber": "AB3D-EF7G-HJ9K-LM2N",
-  "amount": 99.99,
-  "merchantId": "MERCHANT-123",
-  "description": "Purchase"
-}
-```
-
-## Security Guardrails
-
-fauxBank implements zero-trust security principles:
-
-1. **Input Validation**: All inputs are validated and sanitized
-2. **Rate Limiting**: 100 requests per minute per IP
-3. **Authentication**: JWT-based authentication for protected endpoints
-4. **Transaction Limits**: Maximum $1,000,000 per transaction
-5. **Fraud Detection**: Automatic flagging of suspicious transactions
-6. **Audit Logging**: All operations are logged for compliance
-7. **Account Status Checks**: Prevents operations on frozen/closed accounts
-8. **Sufficient Funds Validation**: Ensures adequate balance before transactions
 
 ## Use Cases
 
@@ -292,56 +169,29 @@ fauxBank implements zero-trust security principles:
 - **Training**: Train staff on banking systems
 - **Demonstrations**: Show banking functionality to stakeholders
 - **Education**: Learn about banking systems and APIs
-
-## Project Structure
-
-```
-fauxBank/
-├── src/
-│   ├── controllers/        # API request handlers
-│   ├── models/             # Data models
-│   ├── routes/             # API routes
-│   ├── services/           # Business logic
-│   ├── middleware/         # Security and validation
-│   ├── utils/              # Utilities (account number generation)
-│   └── server.js           # Main server file
-├── .env.example            # Environment template
-├── .gitignore              # Git ignore rules
-├── package.json            # Dependencies
-└── README.md               # This file
-```
+- **E-commerce Testing**: Test agentic commerce platforms
 
 ## Technology Stack
 
-- **Node.js**: Runtime environment
-- **Express.js**: Web framework
-- **JWT**: Authentication
-- **bcryptjs**: Password hashing
-- **In-memory storage**: Simplified data persistence
+- **Backend**: Node.js + Express.js (traditional) or Hono + Cloudflare Workers (edge)
+- **Frontend**: React + TypeScript + Vite
+- **Storage**: In-memory (traditional) or Cloudflare D1 (edge deployment)
+- **Authentication**: JWT
+- **Security**: bcryptjs, rate limiting, input sanitization
 
-## Development
+## Security & Compliance
 
-```bash
-# Install dependencies
-npm install
+FauxBank implements banking-standard security measures:
 
-# Run in development mode with auto-reload
-npm run dev
-
-# Run in production mode
-npm start
-```
-
-## Environment Variables
-
-Create a `.env` file based on `.env.example`:
-
-```env
-PORT=3000
-NODE_ENV=development
-JWT_SECRET=your-secret-key
-ALLOWED_ORIGINS=http://localhost:3000
-```
+- ✓ Zero-trust architecture
+- ✓ JWT-based authentication
+- ✓ Global rate limiting (100 req/min per IP)
+- ✓ XSS prevention
+- ✓ Transaction validation
+- ✓ Fraud detection
+- ✓ Comprehensive audit logging
+- ✓ KYC workflows
+- ✓ Dispute handling
 
 ## License
 
@@ -349,11 +199,11 @@ ISC
 
 ## Contributing
 
-This is a mock banking system for testing and development purposes only. Contributions are welcome!
+This is a mock banking system for testing and development purposes only.
 
 ## Disclaimer
 
-⚠️ **This is a mock banking system for testing purposes only.** 
+⚠️ **This is a mock banking system for testing purposes only.**
 - Do not use for real financial transactions
 - Account numbers are alphanumeric to differentiate from real banks
 - No real money is involved
