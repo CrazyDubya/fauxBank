@@ -2,7 +2,6 @@
   "name": "fauxbank",
   "version": "1.0.0",
   "description": "A fictional bank that is fully featured and functional offering all levels of service at the highest security. Agentic Run and will produce custom accounts for use in compatible fauxWeb sites",
-  "type": "module",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
