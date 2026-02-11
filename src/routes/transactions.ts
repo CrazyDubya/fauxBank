@@ -9,6 +9,8 @@ import {
 import { createLedgerService } from '../services/ledger';
 import { requireCapability, requireAccountAccess, validateTransactionAccess } from '../middleware/auth';
 import { checkTransactionRateLimit, checkDailyAmountLimit } from '../middleware/rate-limit';
+import { validateTransactionKyc } from '../middleware/kyc';
+import { createFraudService } from '../services/fraud';
 import { Errors, errorResponse, handleError } from '../utils/errors';
 
 type Env = {
@@ -41,6 +43,39 @@ transactions.post(
         return errorResponse(c, Errors.insufficientPermissions(
           'Agent does not have access to the specified accounts'
         ));
+      }
+
+      // COMPLIANCE: Validate KYC for high-value transactions and wire transfers
+      const kycResult = await validateTransactionKyc(
+        c,
+        request.debit_account,
+        request.credit_account,
+        request.amount.value,
+        request.type
+      );
+      if (!kycResult.allowed) {
+        return errorResponse(c, Errors.validationError({
+          kyc: [kycResult.reason || 'KYC verification required'],
+        }));
+      }
+
+      // FRAUD SCORING: Assess transaction risk
+      const fraudService = createFraudService(c.env.DB);
+      const fraudAssessment = await fraudService.assessTransactionRisk({
+        debit_account_id: request.debit_account,
+        credit_account_id: request.credit_account,
+        amount: request.amount.value,
+        transaction_type: request.type,
+        agent_id: agentId,
+        metadata: request.metadata,
+      });
+
+      // Block high-risk transactions
+      if (fraudAssessment.recommendation === 'BLOCK') {
+        return errorResponse(c, Errors.validationError({
+          fraud: [`Transaction blocked due to high risk score (${fraudAssessment.risk_level})`],
+          signals: fraudAssessment.flags,
+        }));
       }
 
       // Check transaction rate limit

@@ -7,7 +7,7 @@ import {
   AgentRegistrationRequest,
   AgentScopeRequest,
 } from '../types';
-import { generateAgentToken, hashToken } from '../utils/ids';
+import { generateAgentToken, generateTokenSalt, hashToken, verifyToken } from '../utils/ids';
 import { Errors } from '../utils/errors';
 import { matchAnyAccountPattern } from '../utils/account-id';
 
@@ -56,9 +56,10 @@ export function createAgentService(db: D1Database): AgentService {
         });
       }
 
-      // Generate token
+      // Generate token with per-token salt for enhanced security
       const token = generateAgentToken();
-      const tokenHash = await hashToken(token);
+      const tokenSalt = generateTokenSalt();
+      const tokenHash = await hashToken(token, tokenSalt);
 
       // Determine granted capabilities based on agent type
       const grantedCapabilities = getDefaultCapabilities(request.agent_type);
@@ -122,24 +123,31 @@ export function createAgentService(db: D1Database): AgentService {
     },
 
     async getAgentByToken(token: string): Promise<Agent | null> {
-      const tokenHash = await hashToken(token);
+      // With per-token salts, we need to check against all active agents
+      // This is O(n) but secure; for production at scale, consider token prefix indexing
+      const results = await db
+        .prepare(`SELECT * FROM agents WHERE status = 'ACTIVE'`)
+        .all();
 
-      const result = await db
-        .prepare(`SELECT * FROM agents WHERE token_hash = ? AND status = 'ACTIVE'`)
-        .bind(tokenHash)
-        .first();
-
-      if (!result) {
+      if (!results.results || results.results.length === 0) {
         return null;
       }
 
-      // Check expiration
-      const agent = mapRowToAgent(result);
-      if (agent.expires_at && new Date(agent.expires_at) < new Date()) {
-        return null;
+      for (const row of results.results) {
+        const storedHash = row.token_hash as string;
+        const isMatch = await verifyToken(token, storedHash);
+
+        if (isMatch) {
+          const agent = mapRowToAgent(row);
+          // Check expiration
+          if (agent.expires_at && new Date(agent.expires_at) < new Date()) {
+            return null;
+          }
+          return agent;
+        }
       }
 
-      return agent;
+      return null;
     },
 
     async configureScope(agentId: string, request: AgentScopeRequest): Promise<void> {
@@ -203,10 +211,15 @@ export function createAgentService(db: D1Database): AgentService {
     },
 
     checkAccountAccess(agent: Agent, accountId: string): boolean {
-      // If no patterns specified, agent has access to all accounts
-      // (within their capability level)
-      if (!agent.account_patterns || agent.account_patterns.length === 0) {
+      // SECURITY FIX: ADMIN agents have unrestricted access
+      if (agent.type === 'ADMIN') {
         return true;
+      }
+
+      // SECURITY FIX: If no patterns specified, DENY access (principle of least privilege)
+      // Agents must have explicit account patterns configured to access accounts
+      if (!agent.account_patterns || agent.account_patterns.length === 0) {
+        return false;
       }
 
       return matchAnyAccountPattern(accountId, agent.account_patterns);

@@ -12,7 +12,8 @@ import {
 import { generateAuthorizationId, generateUUID } from '../utils/ids';
 import { Errors } from '../utils/errors';
 import { isValidAccountId } from '../utils/account-id';
-import { createLedgerService, LedgerService } from './ledger';
+import { createLedgerService } from './ledger';
+import { createAuditService } from './audit';
 
 /**
  * Merchant Service
@@ -354,6 +355,23 @@ export function createMerchantService(db: D1Database): MerchantService {
         agent_id: agentId,
       });
 
+      // AUDIT: Log the refund operation
+      const auditService = createAuditService(db);
+      await auditService.log({
+        log_type: 'TRANSACTION',
+        agent_id: agentId,
+        account_id: originalTransaction.debit_account,
+        action: 'TRANSACTION_REFUND',
+        resource_type: 'TRANSACTION',
+        resource_id: refundTransaction.id,
+        request: {
+          original_transaction_id: request.original_transaction_id,
+          refund_amount: refundAmount,
+          reason: request.reason,
+        },
+        outcome: 'SUCCESS',
+      });
+
       return refundTransaction;
     },
 
@@ -373,12 +391,13 @@ export function createMerchantService(db: D1Database): MerchantService {
       }
 
       const now = new Date().toISOString();
+      const voidAmount = authorization.amount.value - authorization.amount_captured;
 
       // Release hold and update authorization
       await db.batch([
         db.prepare(
-          `UPDATE authorizations SET status = 'VOIDED' WHERE id = ?`
-        ).bind(authorizationId),
+          `UPDATE authorizations SET status = 'VOIDED', voided_at = ? WHERE id = ?`
+        ).bind(now, authorizationId),
 
         db.prepare(
           `UPDATE accounts SET
@@ -387,12 +406,51 @@ export function createMerchantService(db: D1Database): MerchantService {
             updated_at = ?
            WHERE id = ?`
         ).bind(
-          authorization.amount.value - authorization.amount_captured,
-          authorization.amount.value - authorization.amount_captured,
+          voidAmount,
+          voidAmount,
           now,
           authorization.customer_account_id
         ),
+
+        // COMPLIANCE: Create reversal transaction record for audit trail
+        db.prepare(
+          `INSERT INTO transactions (
+            id, type, status, debit_account_id, credit_account_id,
+            amount, currency, reference, memo, agent_id, created_at, posted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).bind(
+          generateUUID(),
+          'VOID',
+          'POSTED',
+          authorization.merchant_account_id, // Reversal: merchant loses the auth
+          authorization.customer_account_id, // Customer regains held funds
+          voidAmount,
+          authorization.amount.currency,
+          `VOID-${authorizationId}`,
+          'Authorization voided - hold released',
+          agentId || null,
+          now,
+          now
+        ),
       ]);
+
+      // AUDIT: Log the void operation
+      const auditService = createAuditService(db);
+      await auditService.log({
+        log_type: 'TRANSACTION',
+        agent_id: agentId,
+        account_id: authorization.customer_account_id,
+        action: 'AUTHORIZATION_VOID',
+        resource_type: 'AUTHORIZATION',
+        resource_id: authorizationId,
+        request: {
+          authorization_id: authorizationId,
+          void_amount: voidAmount,
+          merchant_account: authorization.merchant_account_id,
+          customer_account: authorization.customer_account_id,
+        },
+        outcome: 'SUCCESS',
+      });
     },
 
     async getAuthorization(authorizationId: string): Promise<Authorization | null> {

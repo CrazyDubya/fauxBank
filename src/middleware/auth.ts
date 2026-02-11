@@ -2,6 +2,7 @@ import { Context, Next } from 'hono';
 import { Agent, AgentCapability } from '../types';
 import { createAgentService } from '../services/agents';
 import { Errors, errorResponse } from '../utils/errors';
+import { logAuthAttempt, logSecurityEvent } from './audit';
 
 /**
  * Authentication and Authorization Middleware
@@ -21,8 +22,11 @@ declare module 'hono' {
 export function authMiddleware() {
   return async (c: Context, next: Next) => {
     const authHeader = c.req.header('Authorization');
+    const traceId = c.res.headers.get('X-Trace-ID') || c.req.header('X-Trace-ID');
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      // Log failed auth attempt (no token)
+      logAuthAttempt(c.env.DB, undefined, false, 'Missing or invalid Authorization header', traceId).catch(() => {});
       return errorResponse(c, Errors.invalidCredentials());
     }
 
@@ -32,12 +36,19 @@ export function authMiddleware() {
     const agent = await agentService.getAgentByToken(token);
 
     if (!agent) {
+      // Log failed auth attempt (invalid token)
+      logAuthAttempt(c.env.DB, undefined, false, 'Invalid token', traceId).catch(() => {});
       return errorResponse(c, Errors.invalidCredentials());
     }
 
     if (agent.status !== 'ACTIVE') {
+      // Log failed auth attempt (inactive agent)
+      logAuthAttempt(c.env.DB, agent.id, false, `Agent is ${agent.status.toLowerCase()}`, traceId).catch(() => {});
       return errorResponse(c, Errors.invalidCredentials({ reason: `Agent is ${agent.status.toLowerCase()}` }));
     }
+
+    // Log successful auth
+    logAuthAttempt(c.env.DB, agent.id, true, undefined, traceId).catch(() => {});
 
     // Record activity
     await agentService.recordActivity(agent.id);
@@ -62,6 +73,14 @@ export function requireCapability(capability: AgentCapability) {
     }
 
     if (!agent.capabilities.includes(capability)) {
+      // Log capability denial
+      logSecurityEvent(
+        c.env.DB,
+        agent.id,
+        'CAPABILITY_DENIED',
+        { required: capability, agent_capabilities: agent.capabilities },
+        'BLOCKED'
+      ).catch(() => {});
       return errorResponse(c, Errors.insufficientPermissions(capability));
     }
 
@@ -107,6 +126,14 @@ export function requireAccountAccess(paramName: string = 'accountId') {
     const agentService = createAgentService(c.env.DB);
 
     if (!agentService.checkAccountAccess(agent, accountId)) {
+      // Log account access denial
+      logSecurityEvent(
+        c.env.DB,
+        agent.id,
+        'ACCOUNT_ACCESS_DENIED',
+        { accountId, agent_patterns: agent.account_patterns },
+        'BLOCKED'
+      ).catch(() => {});
       return errorResponse(c, Errors.insufficientPermissions(`Access denied to account ${accountId}`));
     }
 
@@ -116,6 +143,8 @@ export function requireAccountAccess(paramName: string = 'accountId') {
 
 /**
  * SECURITY FIX: Check access to multiple accounts (for transactions)
+ * Requires agent to have access to BOTH accounts unless they are ADMIN
+ * or the transaction involves a system account
  */
 export async function validateTransactionAccess(
   c: Context,
@@ -125,19 +154,33 @@ export async function validateTransactionAccess(
   const agent = c.get('agent');
   if (!agent) return false;
 
-  const agentService = createAgentService(c.env.DB);
-
-  // Agent must have access to at least one of the accounts
-  const hasDebitAccess = agentService.checkAccountAccess(agent, debitAccountId);
-  const hasCreditAccess = agentService.checkAccountAccess(agent, creditAccountId);
-
-  // For ADMIN agents, allow any transaction
+  // ADMIN agents have unrestricted access
   if (agent.type === 'ADMIN') {
     return true;
   }
 
-  // For other agents, must have access to at least one account
-  return hasDebitAccess || hasCreditAccess;
+  const agentService = createAgentService(c.env.DB);
+
+  // Check access to both accounts
+  const hasDebitAccess = agentService.checkAccountAccess(agent, debitAccountId);
+  const hasCreditAccess = agentService.checkAccountAccess(agent, creditAccountId);
+
+  // System accounts (used for deposits, fees, etc.) are accessible for credits/debits
+  const systemAccounts = [
+    'CH-COMM-SEEDBANK-AA',
+    'CH-COMM-FEEINCOM-BB',
+    'CH-COMM-INTEREST-CC',
+    'CH-COMM-EXTERNAL-DD',
+  ];
+  const isSystemDebit = systemAccounts.includes(debitAccountId);
+  const isSystemCredit = systemAccounts.includes(creditAccountId);
+
+  // Allow if agent has access to their account side and other side is system
+  if (hasDebitAccess && isSystemCredit) return true;
+  if (hasCreditAccess && isSystemDebit) return true;
+
+  // For non-system transactions, require access to BOTH accounts
+  return hasDebitAccess && hasCreditAccess;
 }
 
 /**

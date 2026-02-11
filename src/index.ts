@@ -9,9 +9,11 @@ import { transactions } from './routes/transactions';
 import { merchant } from './routes/merchant';
 import { agents } from './routes/agents';
 import { compliance } from './routes/compliance';
+import { customers } from './routes/customers';
 import { testing } from './routes/testing';
 import { authMiddleware } from './middleware/auth';
 import { rateLimitMiddleware } from './middleware/rate-limit';
+import { auditMiddleware } from './middleware/audit';
 import { AccountLedger } from './durable-objects/account-ledger';
 import { handleError, errorResponse, generateTraceId } from './utils/errors';
 
@@ -84,7 +86,8 @@ app.get('/health', (c) => {
 // API version prefix
 const v1 = new Hono<{ Bindings: Env }>();
 
-// Apply rate limiting to all v1 routes
+// Apply audit logging and rate limiting to all v1 routes
+v1.use('*', auditMiddleware());
 v1.use('*', rateLimitMiddleware());
 
 // Agent registration (no auth required)
@@ -99,6 +102,7 @@ protectedRoutes.route('/accounts', accounts);
 protectedRoutes.route('/transactions', transactions);
 protectedRoutes.route('/commercial/merchant', merchant);
 protectedRoutes.route('/compliance', compliance);
+protectedRoutes.route('/customers', customers);
 
 // Testing routes - SECURITY: Protected in production
 const testingRouter = new Hono<{ Bindings: Env }>();
